@@ -1,11 +1,17 @@
+from django.db import IntegrityError, transaction
 from django.db.models import Count
-from rest_framework import viewsets
-from rest_framework.decorators import api_view, permission_classes
+from django.utils import timezone
+from rest_framework import serializers as drf_serializers
+from rest_framework import status, viewsets
+from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from .models import ClothRoll, DipRun, Loft
+from accounts.permissions import IsAdminRole
+
+from .models import ClothRoll, DipRun, Loft, PassphraseToken
 from .serializers import ClothRollSerializer, DipRunSerializer, LoftSerializer
+from .token_serializers import PassphraseTokenSerializer
 
 
 class LoftViewSet(viewsets.ModelViewSet):
@@ -37,6 +43,61 @@ class DipRunViewSet(viewsets.ModelViewSet):
         if roll_id:
             qs = qs.filter(roll_id=roll_id)
         return qs
+
+
+class PassphraseTokenViewSet(viewsets.ModelViewSet):
+    """口令牌：任何登录用户可查；仅管理员可签发与作废。"""
+
+    serializer_class = PassphraseTokenSerializer
+    permission_classes = [IsAdminRole]
+    http_method_names = ["get", "post", "head", "options"]
+
+    def get_queryset(self):
+        qs = PassphraseToken.objects.select_related("loft", "issued_by").all()
+        loft_id = self.request.query_params.get("loftId")
+        if loft_id:
+            qs = qs.filter(loft_id=loft_id)
+        if self.request.query_params.get("active") in ("1", "true", "True"):
+            now = timezone.now()
+            qs = qs.filter(
+                revoked_at__isnull=True,
+                valid_from__lte=now,
+                valid_until__gt=now,
+            )
+        return qs
+
+    def create(self, request, *args, **kwargs):
+        # 锁住对应帆布间行，串行化同间并发签发；跨间不互斥
+        loft_id = request.data.get("loftId")
+        with transaction.atomic():
+            if loft_id:
+                list(
+                    Loft.objects.select_for_update()
+                    .filter(pk=loft_id)
+                    .values_list("id", flat=True)
+                )
+            serializer = self.get_serializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
+            try:
+                serializer.save()
+            except IntegrityError:
+                # 数据库排他约束兜底：同间未作废时段重叠
+                raise drf_serializers.ValidationError(
+                    {"non_field_errors": ["同一帆布间未作废口令时段不得重叠"]}
+                )
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=["post"])
+    def revoke(self, request, pk=None):
+        token = self.get_object()
+        if token.revoked_at is not None:
+            return Response(
+                {"detail": "该口令牌已作废，无需重复作废"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        token.revoked_at = timezone.now()
+        token.save(update_fields=["revoked_at"])
+        return Response(self.get_serializer(token).data)
 
 
 @api_view(["GET"])

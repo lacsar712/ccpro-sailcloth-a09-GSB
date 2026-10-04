@@ -5,7 +5,7 @@ from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand
 from django.utils import timezone
 
-from core.models import ClothRoll, DipRun, Loft
+from core.models import ClothRoll, DipRun, Loft, PassphraseToken
 
 User = get_user_model()
 
@@ -29,6 +29,22 @@ class Command(BaseCommand):
         admin.is_superuser = True
         admin.save()
         self.stdout.write(self.style.SUCCESS(f"admin {'created' if created else 'updated'}"))
+
+        admin2, created = User.objects.get_or_create(
+            username="admin2",
+            defaults={
+                "email": "admin2@sailcloth.local",
+                "role": User.ROLE_ADMIN,
+                "is_staff": True,
+                "is_superuser": True,
+            },
+        )
+        admin2.set_password("123456")
+        admin2.role = User.ROLE_ADMIN
+        admin2.is_staff = True
+        admin2.is_superuser = True
+        admin2.save()
+        self.stdout.write(self.style.SUCCESS(f"admin2 {'created' if created else 'updated'}"))
 
         worker, created = User.objects.get_or_create(
             username="worker",
@@ -91,5 +107,19 @@ class Command(BaseCommand):
             self.style.SUCCESS(
                 f"种子完成：帆布间 {Loft.objects.count()}，布卷 {ClothRoll.objects.count()}，"
                 f"浸渍 {DipRun.objects.count()}"
+            )
+        )
+
+        # 一张已过期、未作废的口令牌：演示「无覆盖此刻的口令不能标浸渍中」
+        expired_token = PassphraseToken.objects.create(
+            loft=loft,
+            plaintext="上一班口令-已过期",
+            valid_from=now - timedelta(days=2),
+            valid_until=now - timedelta(hours=1),
+            issued_by=admin,
+        )
+        self.stdout.write(
+            self.style.SUCCESS(
+                f"种子口令牌 1 张（已过期，失效于 {expired_token.valid_until:%Y-%m-%d %H:%M}）"
             )
         )

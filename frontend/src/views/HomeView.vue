@@ -107,8 +107,12 @@ async function logDip() {
     if (selected.value.status === 'raw') {
       try {
         await api.patch(`/rolls/${selected.value.id}/`, { status: 'dipping' })
-      } catch {
-        /* 浸渍已记；状态跟进失败不阻断 */
+      } catch (followErr) {
+        // 浸渍已登记，但没有覆盖此刻的未作废口令：原样展示服务端中文拦截，不开绿灯
+        panelError.value =
+          followErr.response?.data?.status?.[0] ||
+          followErr.response?.data?.detail ||
+          '浸渍已登记，但当前没有覆盖此刻的有效口令，未自动标为浸渍中'
       }
     }
     dipForm.cureHours = ''

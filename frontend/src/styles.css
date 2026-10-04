@@ -182,6 +182,11 @@ th { background: var(--canvas-deep); color: var(--navy); }
 .badge-dipping { background: #f3e6c4; color: #6b4f12; }
 .badge-cured { background: #d9ebe1; color: #2f6f4e; }
 
+.tok-active { background: #d9ebe1; color: #2f6f4e; }
+.tok-future { background: #e8eef5; color: #16324f; }
+.tok-expired { background: #ece4d3; color: #7a6a45; }
+.tok-revoked { background: #ecd9d9; color: #9b2c2c; }
+
 .login-wrap {
   min-height: 100vh;
   display: grid;

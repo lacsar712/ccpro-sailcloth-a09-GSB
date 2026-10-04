@@ -1,7 +1,7 @@
 from rest_framework import serializers
 
 from .models import ClothRoll, DipRun, Loft
-from .rules import can_mark_roll_cured
+from .rules import can_mark_roll_cured, can_mark_roll_dipping
 
 
 class LoftSerializer(serializers.ModelSerializer):
@@ -50,13 +50,20 @@ class ClothRollSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError({"rollCode": "同一帆布间卷号必须唯一"})
 
         new_status = attrs.get("status")
-        if new_status == ClothRoll.STATUS_CURED:
+        if new_status == ClothRoll.STATUS_DIPPING:
+            # 浸渍中：只认覆盖此刻、未作废的口令牌（按帆布间）
+            if loft is None:
+                raise serializers.ValidationError({"loftId": "请选择帆布间"})
+            ok, msg = can_mark_roll_dipping(loft)
+            if not ok:
+                raise serializers.ValidationError({"status": msg})
+        elif new_status == ClothRoll.STATUS_CURED:
             roll = self.instance
             if roll is None:
                 raise serializers.ValidationError(
                     {"status": "新建布卷不能直接设为已固化"}
                 )
-            # 合并未提交字段到临时视角：用当前实例校验
+            # 固化只认时长，口令不掺进来
             ok, msg = can_mark_roll_cured(roll)
             if not ok:
                 raise serializers.ValidationError({"status": msg})
