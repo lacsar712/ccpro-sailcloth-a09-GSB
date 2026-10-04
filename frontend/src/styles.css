@@ -406,3 +406,39 @@ th { background: var(--canvas-deep); color: var(--navy); }
   .layout { grid-template-columns: 1fr; }
   .content { padding: 18px 16px; }
 }
+
+/* 口令牌 */
+.token-form { display: grid; gap: 12px; }
+.list-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.scope-switch {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.scope-switch label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-weight: 500;
+  color: var(--muted);
+}
+.scope-switch input { min-width: 0; width: auto; }
+.row-revoked td { color: var(--muted); text-decoration: line-through; }
+.token-state-active { background: #d9ebe1; color: #2f6f4e; }
+.token-state-pending { background: #e8eef5; color: #16324f; }
+.token-state-expired { background: #efe6e0; color: #7a5b46; }
+.token-state-revoked { background: #e6d9d9; color: #7a3b3b; }
+.token-rule-hint {
+  margin: 0;
+  padding: 8px 10px;
+  border-left: 3px solid var(--accent);
+  background: rgba(196, 163, 90, 0.1);
+  font-size: 0.86rem;
+}

@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.db import models
 
 
@@ -58,3 +59,60 @@ class DipRun(models.Model):
 
     def __str__(self):
         return f"Dip@{self.roll_id} {self.started_at}"
+
+
+class PassTokenQuerySet(models.QuerySet):
+    def active(self):
+        """未作废（作废时刻为空）。"""
+        return self.filter(revoked_at__isnull=True)
+
+    def covering(self, moment):
+        """未作废且时段覆盖 moment（左闭右开）。"""
+        return self.active().filter(valid_from__lte=moment, valid_until__gt=moment)
+
+    def overlapping(self, valid_from, valid_until):
+        """未作废且与 [valid_from, valid_until) 时段重叠（端点相接不算重叠）。"""
+        return self.active().filter(
+            valid_from__lt=valid_until,
+            valid_until__gt=valid_from,
+        )
+
+
+class PassToken(models.Model):
+    """帆布间口令牌：改成「浸渍中」必须持有覆盖当前时刻的未作废口令。"""
+
+    loft = models.ForeignKey(Loft, on_delete=models.CASCADE, related_name="pass_tokens")
+    passphrase = models.CharField(max_length=128)
+    valid_from = models.DateTimeField()
+    valid_until = models.DateTimeField()
+    issued_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="issued_pass_tokens",
+    )
+    revoked_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    objects = PassTokenQuerySet.as_manager()
+
+    class Meta:
+        ordering = ["loft_id", "-valid_from", "-id"]
+        indexes = [
+            models.Index(fields=["loft", "revoked_at", "valid_from", "valid_until"]),
+        ]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(valid_until__gt=models.F("valid_from")),
+                name="passtoken_until_after_from",
+            ),
+        ]
+
+    def __str__(self):
+        return f"PassToken@{self.loft_id} {self.valid_from:%Y-%m-%d %H:%M}"
+
+    @property
+    def is_active(self) -> bool:
+        return self.revoked_at is None
+
+    def covers(self, moment) -> bool:
+        return self.is_active and self.valid_from <= moment < self.valid_until

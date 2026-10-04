@@ -1,7 +1,8 @@
+from django.utils import timezone
 from rest_framework import serializers
 
-from .models import ClothRoll, DipRun, Loft
-from .rules import can_mark_roll_cured
+from .models import ClothRoll, DipRun, Loft, PassToken
+from .rules import can_enter_dipping, can_mark_roll_cured
 
 
 class LoftSerializer(serializers.ModelSerializer):
@@ -56,8 +57,17 @@ class ClothRollSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError(
                     {"status": "新建布卷不能直接设为已固化"}
                 )
-            # 合并未提交字段到临时视角：用当前实例校验
+            # 固化只认最近浸渍固化时长满 12 小时，口令牌不参与固化判定
             ok, msg = can_mark_roll_cured(roll)
+            if not ok:
+                raise serializers.ValidationError({"status": msg})
+        elif new_status == ClothRoll.STATUS_DIPPING:
+            # 浸渍中：该帆布间须有覆盖此刻、未作废的口令牌
+            if loft is None:
+                raise serializers.ValidationError(
+                    {"status": "缺少帆布间，无法核验口令牌"}
+                )
+            ok, msg = can_enter_dipping(loft.id)
             if not ok:
                 raise serializers.ValidationError({"status": msg})
         return attrs
@@ -93,3 +103,70 @@ class DipRunSerializer(serializers.ModelSerializer):
             "created_at",
         )
         read_only_fields = ("id", "rollCode", "loftName", "created_at")
+
+
+class PassTokenSerializer(serializers.ModelSerializer):
+    loftId = serializers.PrimaryKeyRelatedField(source="loft", queryset=Loft.objects.all())
+    loftName = serializers.CharField(source="loft.name", read_only=True)
+    passphrase = serializers.CharField(max_length=120)
+    validFrom = serializers.DateTimeField(source="valid_from")
+    validUntil = serializers.DateTimeField(source="valid_until")
+    issuedById = serializers.IntegerField(source="issued_by_id", read_only=True)
+    issuedByName = serializers.CharField(source="issued_by.username", read_only=True)
+    revokedAt = serializers.DateTimeField(source="revoked_at", read_only=True)
+    state = serializers.SerializerMethodField()
+
+    class Meta:
+        model = PassToken
+        fields = (
+            "id",
+            "loftId",
+            "loftName",
+            "passphrase",
+            "validFrom",
+            "validUntil",
+            "issuedById",
+            "issuedByName",
+            "revokedAt",
+            "state",
+            "created_at",
+        )
+        read_only_fields = (
+            "id",
+            "loftName",
+            "issuedById",
+            "issuedByName",
+            "revokedAt",
+            "state",
+            "created_at",
+        )
+
+    def get_state(self, obj):
+        now = timezone.now()
+        if obj.revoked_at is not None:
+            return "revoked"
+        if now < obj.valid_from:
+            return "pending"
+        if now >= obj.valid_until:
+            return "expired"
+        return "active"
+
+    def validate(self, attrs):
+        valid_from = attrs.get("valid_from")
+        valid_until = attrs.get("valid_until")
+        loft = attrs.get("loft")
+        if valid_from and valid_until and valid_until <= valid_from:
+            raise serializers.ValidationError(
+                {"validUntil": "失效时刻必须晚于生效时刻"}
+            )
+        if loft and valid_from and valid_until:
+            clash = (
+                PassToken.objects.overlapping(valid_from, valid_until)
+                .filter(loft=loft)
+                .exists()
+            )
+            if clash:
+                raise serializers.ValidationError(
+                    {"validFrom": "同一帆布间已存在未作废且时段重叠的口令牌"}
+                )
+        return attrs

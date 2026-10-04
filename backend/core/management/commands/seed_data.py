@@ -5,7 +5,7 @@ from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand
 from django.utils import timezone
 
-from core.models import ClothRoll, DipRun, Loft
+from core.models import ClothRoll, DipRun, Loft, PassToken
 
 User = get_user_model()
 
@@ -61,7 +61,27 @@ class Command(BaseCommand):
             loft=loft, roll_code="R-03", status=ClothRoll.STATUS_CURED, fabric_weight_gsm=450
         )
 
+        # 一间原布：卷均未浸渍；只配一张已过期口令，直接标浸渍中应被挡住。
+        loft2 = Loft.objects.create(
+            name="西坞帆布间",
+            location="西区晾台",
+            notes="口令牌示范 loft：仅有一张已过期口令",
+        )
+        ClothRoll.objects.create(
+            loft=loft2, roll_code="X-01", status=ClothRoll.STATUS_RAW, fabric_weight_gsm=400
+        )
+        ClothRoll.objects.create(
+            loft=loft2, roll_code="X-02", status=ClothRoll.STATUS_RAW, fabric_weight_gsm=360
+        )
         now = timezone.now()
+        PassToken.objects.create(
+            loft=loft2,
+            passphrase="旧口令-西坞-0401",
+            valid_from=now - timedelta(days=3),
+            valid_until=now - timedelta(days=1),
+            issued_by=admin,
+        )
+
         DipRun.objects.bulk_create(
             [
                 DipRun(
@@ -90,6 +110,6 @@ class Command(BaseCommand):
         self.stdout.write(
             self.style.SUCCESS(
                 f"种子完成：帆布间 {Loft.objects.count()}，布卷 {ClothRoll.objects.count()}，"
-                f"浸渍 {DipRun.objects.count()}"
+                f"浸渍 {DipRun.objects.count()}，口令牌 {PassToken.objects.count()}"
             )
         )

@@ -83,7 +83,7 @@ async function setStatus(status) {
     panelError.value =
       data?.status?.[0] ||
       data?.detail ||
-      '状态更新失败（标「已固化」需最近浸渍固化时长 ≥ 12 小时）'
+      '状态更新失败（标「浸渍中」需本帆布间有覆盖此刻的未作废口令牌；标「已固化」需最近浸渍固化时长 ≥ 12 小时）'
   } finally {
     panelBusy.value = false
   }
@@ -107,8 +107,13 @@ async function logDip() {
     if (selected.value.status === 'raw') {
       try {
         await api.patch(`/rolls/${selected.value.id}/`, { status: 'dipping' })
-      } catch {
-        /* 浸渍已记；状态跟进失败不阻断 */
+      } catch (followErr) {
+        // 浸渍已记，但状态跟进被口令闸门挡住：原样亮出后端中文原因
+        panelError.value =
+          followErr.response?.data?.status?.[0] ||
+          '浸渍已登记，但该帆布间没有覆盖当前时刻的未作废口令牌，布卷未改为浸渍中'
+        await load()
+        return
       }
     }
     dipForm.cureHours = ''
@@ -133,7 +138,7 @@ onMounted(load)
     <header class="rack-head">
       <div>
         <h1>帆布间晾晒架</h1>
-        <p class="sub">按帆布间挂卷；点选布卷登记浸渍或标固化。固化规则：最近浸渍时长 ≥ 12 小时。</p>
+        <p class="sub">按帆布间挂卷；点选布卷登记浸渍或标固化。改「浸渍中」须本帆布间有覆盖此刻、未作废的口令牌；「已固化」只认最近浸渍时长 ≥ 12 小时，口令不参与固化。</p>
       </div>
       <button class="btn secondary" type="button" @click="load">刷新架面</button>
     </header>
@@ -211,6 +216,9 @@ onMounted(load)
         <span class="hint">{{ selected.fabricWeightGsm }} gsm</span>
       </div>
       <p v-if="selected.notes" class="hint">{{ selected.notes }}</p>
+      <p class="hint token-rule-hint">
+        改「浸渍中」须本帆布间持有覆盖此刻、未作废的口令牌；被挡时请到「口令牌」页请管理员签发。
+      </p>
       <p v-if="panelError" class="error">{{ panelError }}</p>
 
       <div class="drawer-actions">
